@@ -1,0 +1,9 @@
+Package: sradio
+Version: 0.5
+Architecture: all
+Maintainer: Ibrahim E.Gad <eibrahim95@gmail.com>
+Section: Utilities
+Depends: kde-baseapps-bin, wget, vlc, findutils
+Priority: optional
+Description: Listen to online radio stations
+ Listen to online radio stations

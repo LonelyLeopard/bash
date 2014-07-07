@@ -1,0 +1,20 @@
+[Desktop Entry]
+Comment[en_US]=Listen to online radio stations
+Comment=Listen to online radio stations
+Exec=/usr/bin/sradio
+GenericName[en_US]=Listen to online radio stations
+GenericName=Listen to online radio stations
+Icon=/usr/share/icons/radio.png
+MimeType=
+Name[en_US]=SRadio
+Name=SRadio
+Path=
+StartupNotify=true
+Terminal=false
+TerminalOptions=
+Type=Application
+X-DBUS-ServiceName=
+X-DBUS-StartupType=
+X-KDE-SubstituteUID=false
+X-KDE-Username=
+Categories=Qt;KDE;Utility;
