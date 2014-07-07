@@ -1,0 +1,722 @@
+#! /bin/bash
+
+APPDIR=`dirname $(realpath $0)`
+TITLE="DRedistwizard 0.4"
+TMP="/tmp/dredistwizard/choices"
+
+. $APPDIR/data/basefs-editor.tpt
+export DIALOG_CANCEL="10"
+
+function getChoice() {
+	cat $TMP 2> /dev/null | head -n1
+	
+}
+
+function ctrlCncl() {
+	[[ "$?" == 10 ]] && redistMenu
+}
+
+function chScr() {
+	cols=`tput cols`
+	lines=`tput lines`
+	(( $cols < 60 )) || (( $lines < 30 )) &&
+	echo -e "This program should be run in tirminal at least 60 columns and 30 lines.\nyour terminal is $cols columns and $lines lines." &&
+	exit 2
+	chDeps
+}
+
+function setWorkdir() {
+		dialog --clear --no-shadow --no-cancel --backtitle "$TITLE" --title "$a1" --dselect "/" 15 60 2> "$TMP"
+		WORKDIR=`getChoice | sed "s/\/$//g"`
+		NWDIR="$WORKDIR/extracted/newiso"
+		if [[ ! -d $WORKDIR ]]; then
+			dialog --clear --no-shadow --backtitle "$TITLE" --title "No such directory" --msgbox "$a11" 15 60
+			setWorkdir 
+		fi
+}
+
+function clrWorkdir() {
+	setWorkdir
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$a4" --yesno "$A7" 10 60 2> /dev/null
+	[[ "$?" == 0 ]] && 
+		umount $NWDIR/live/basefs/dev/pts > /dev/null 2>&1 &&
+		umount $NWDIR/live/basefs/dev > /dev/null 2>&1 &&
+		umount $NWDIR/live/basefs/proc > /dev/null 2>&1 &&
+		umount $NWDIR/live/basefs/sys > /dev/null 2>&1 &&
+		chmod -Rf u+rwx $WORKDIR/extracted &&
+		rm -rf $WORKDIR/extracted/
+	[[ "$?" == 10 ]] && return
+}
+
+function getBase() {
+	[[ -z $WORKDIR ]] && setWorkdir
+	cat /tmp/dredistwizard/basefs.list | awk -F ";http" '{print $1}' | sed "s/;/;\"/g" | sed "s/$/\"/g" | tr "\n" " " | sed "s/;/ /g" | xargs \
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "Getting StdBaseFs" --menu "$a5" 16 70 11 2> $TMP
+	[[ $? == 123 ]] && mainMenu
+	choice=`getChoice`
+	baseurl=`cat /tmp/dredistwizard/basefs.list | grep "^$choice" | awk -F ";" '{print $3}'`
+	basefname=`basename $baseurl`
+	cd $WORKDIR
+	wget -t 5 -c "$baseurl" 2>&1 | \
+	stdbuf -o0 awk '/[.] +[0-9][0-9]?[0-9]?%/ { print substr($0,63,3) }' | \
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "Downloading StdBasefs" --gauge "Downloading $basefname" 10 100
+}
+
+function strRedist () {
+	if [[ -n $basefname ]]
+	then
+		stdname=`echo $basefname | sed -e 's/.7z//g'`
+		isoname="$stdname.iso"
+		if [[ -d $WORKDIR/extracted/newiso ]]
+		then
+			redistMenu
+		else
+			7z e -y $basefname -oextracted > /dev/null 2>&1 &&
+			cd extracted
+			mount $isoname $stdname 2> /dev/null
+			cp -rf $stdname newiso
+			chmod -Rf u+w newiso/live/
+			chmod -Rf u+w newiso/install/
+			chmod -Rf u+w newiso/isolinux/
+			chmod -Rf u+w newiso/isolinux/{grub.jpg,live.cfg,menu.cfg}
+			umount $isoname $stdname > /dev/null 2>&1
+			rm -rf $stdname
+			cd ..
+		fi
+	else
+		getBase; strRedist
+	fi
+	if [[ -d $NWDIR ]]
+	then
+		cd $NWDIR
+		redistMenu
+	fi
+}
+
+function setIsoname() {
+	if [[ -n "$newisoname" ]]
+	then
+		return
+	fi
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R1" --inputbox "$C1" 15 60 "$isoname" 2>$TMP
+	ctrlCncl
+	newisoname=`getChoice | tr -d " "`
+	if [[ -z $newisoname ]] || [ -n "$(echo "$newisoname" | tr -d '[:alnum:]-_.')" ]
+	then
+		setIsoname
+	else
+		isoname="$newisoname"
+	fi
+}
+
+function setDistname() {
+	if [[ -n $newdistname ]]
+	then
+		return
+	fi
+	distname=`cat $NWDIR/isolinux/menu.cfg | grep -m1 "menu title" | awk '{print $3,$4}' | tr -d '\n'`
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R2" --inputbox "$C2" 15 60 "$distname" 2> $TMP
+	ctrlCncl
+	newdistname=`getChoice`
+	if [[ -z $newdistname ]] || [ -n "$(echo "$newdistname" | tr -d '[:alnum:]')" ]
+	then
+		setDistname
+	else
+		sed -i "s/menu title $distname/menu title $newdistname/g" $NWDIR/isolinux/menu.cfg
+	fi
+}
+
+function setGrublbl() {
+	if [[ -n $newgrublbl ]]
+	then
+		return
+	fi
+	grublbl=`cat $NWDIR/isolinux/live.cfg | grep -m1 "menu label" | tr -d '\t' | sed 's/menu label //g'`
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R3" --inputbox "$C3" 15 60 "$grublbl" 2> $TMP
+	ctrlCncl
+	newgrublbl=`getChoice`
+	if [[ -z $newgrublbl ]] || [ -n "$(echo "$newgrublbl" | tr -d '[:print:]')" ]
+	then
+		setGrublbl
+	else
+		sed -i 's,menu label '"$grublbl"',menu label '"$newgrublbl"',g' $NWDIR/isolinux/live.cfg
+	fi
+}
+
+function setGrubimg() {
+	if [[ -n $newgrubimg ]]
+	then
+		return
+	fi
+	grubimgdir="$NWDIR/isolinux/grub.jpg"
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R4" --inputbox "C4" 15 60 "$grubimgdir" 2> $TMP
+	ctrlCncl
+	newgrubimg=`getChoice`
+	if [[ -z $newgrubimg ]] || [[ ! -f "$newgrubimg" ]]
+	then
+		setGrubimg
+	elif [[ "$newgrubimg" == "$grubimg" ]]
+	then
+		return
+	else
+		cp $newgrubimg $NWDIR/isolinux/grub.jpg
+	fi
+}
+
+function setEtc() {
+	if [[ -d $newetcdir ]]
+	then
+		return
+	fi
+	etcdir="$NWDIR/install/sysconf"
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R5" --dselect "$etcdir" 15 60 2> $TMP
+	ctrlCncl
+	newetcdir=`getChoice "6"`
+	if [[ -z $newetcdir ]] || [[ ! -d $newetcdir ]]
+	then
+		setEtc
+	elif [[ "$newetcdir" == "$etcdir" ]]
+	then
+		return
+	else
+		execludes="X11/xorg.conf resolv.conf hosts hostname mtab fstab udev/rules.d/70-persistent* group group- passwd passwd- shadow shadow- gshadow \
+		gshadow- wicd/wired-settings.conf wicd/wireless-settings.conf NetworkManager/system-connections/* printcap cups/printers.conf gdm/gdm.conf-custom \
+		gdm/custom.conf cups/ssl/server.crt cups/ssl/server.key ssh/ssh_host_rsa_key ssh/ssh_host_dsa_key.pub ssh/ssh_host_dsa_key ssh/ssh_host_rsa_key.pub"
+		rm -f $etcdir/etc.squashfs
+		mksquashfs $newetcdir/ $etcdir/etc.squashfs -no-duplicates -no-recovery -always-use-fragments -b 1M -e $execludes
+	fi
+}
+
+function setSkel() {
+	if [[ -d $newskeldir ]]
+	then
+		return
+	fi
+	skeldir="$NWDIR/install/userconf"
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R6" --dselect "$skeldir" 15 60 2> $TMP
+	ctrlCncl
+	newskeldir=`getChoice "7"`
+	if [[ -z $newskeldir ]] || [[ ! -d $newskeldir ]]
+	then
+		setSkel
+	elif [[ "$newskeldir" == "$skeldir" ]]
+	then
+		return
+	else
+		execludes=".adobe .cache .dbus .fontconfig .gnupg .gstreamer-0.10 .icedtea .kde/cache* .kde/socket* .kde/tmp* .macromedia .pulse .Skype .speech-dispatcher \
+		.ssh .subversion .thumbnails .wine .alsaequal.bin .bash_history .esd_auth .gksu.lock .htcfg2 .lesshst .nano_history .pulse-cookie .Xauthority \
+		.xsession-errors*"
+		rm -f $skeldir/skel.squashfs
+		mksquashfs $newskeldir/ $skeldir/skel.squashfs -no-duplicates -no-recovery -always-use-fragments -b 1M -e $execludes
+	fi
+}
+
+function setExtra() {
+	if [[ -d $newextradir ]]
+	then
+		return
+	fi
+	extradir="$NWDIR/install/rootfs"
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R7" --dselect "$extradir" 15 60 2> $TMP
+	ctrlCncl
+	newextradir=`getChoice`
+	if [[ -z $newextradir ]] || [[ ! -d $newextradir ]]
+	then
+		setExtra
+	elif [[ "$newextradir" == "$extradir" ]]
+	then
+		return
+	else
+		rm -f $extradir/root.squashfs
+		mksquashfs $newextradir/ $extradir/root.squashfs -no-duplicates -no-recovery -always-use-fragments -b 1M
+	fi
+}
+
+function setRepos() {
+	if [[ $helper == 1 ]]
+	then
+		return
+	fi
+	reposfile=`cat $NWDIR/install/sources.list`
+	nwreposf="/tmp/dredistwizard/sources.list"
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R8" --editbox "$NWDIR/install/sources.list" 15 60 2> $nwreposf
+	ctrlCncl
+	nwreposf_=`cat $nwreposf`
+	if [[ -n $nwreposf_ ]]
+	then
+		 cat $nwreposf > $NWDIR/install/sources.list
+		 helper=1
+	fi
+}
+
+function setKeys() {
+	if [[ -n $newkeysdir ]]
+	then
+		return
+	fi
+	keysdir="$NWDIR/install/apt-keys/*.gpg"
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R9" --inputbox "$R9\n." 15 60 "$keysdir" 2> $TMP
+	ctrlCncl
+	newkeysdir=`getChoice`
+	if [[ ! -d "$newkeysdir" ]]
+	then
+		setKeys
+	else
+		for i in "$newkeysdir"
+		do
+			[[ ! -f "$i" ]] && setKeys && break
+			cp -f $i $NWDIR/install/apt-keys/
+		done
+	fi
+}
+
+function baseEnv() {
+	if [[ ! -d $NWDIR/live/basefs ]]
+	then
+		cd $NWDIR/live/
+		unsquashfs -f -x -d basefs filesystem.squashfs > /dev/null 2>&1
+		mount -o bind /proc basefs/proc
+		mount -o bind /sys basefs/sys
+		mount -o bind /dev basefs/dev
+		mount -o bind /dev/pts basefs/dev/pts
+		cp /etc/resolv.conf basefs/etc/resolv.conf
+		cd ..
+	fi
+}
+
+function setRmpacks() {
+	if [[ -n $rempacks ]]
+	then
+		return
+	fi
+	chroot $NWDIR/live/basefs/ dpkg -l | grep "^ii" | awk '{print $2}' | sed 's/:i386//g' | tr "\n" " " | sed 's/ / "" off /g' | xargs \
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R10" --checklist "$C9" 60 45 50 2> $TMP
+	ctrlCncl
+	rempacks=`getChoice`
+	prmline=`cat $NWDIR/install/backend.parm | grep -m1 "^removepacks:" | sed 's/removepacks://g' | tr -d ';'`
+	if [[ -n "$rempacks" ]]
+	then
+		sed -i 's,removepacks:'"$prmline"';,removepacks:'"$rempacks"';,g' $NWDIR/install/backend.parm
+		chroot $NWDIR/live/basefs/ apt-get -qy -s --force-yes purge $rempacks 2>&1 | sed -u 's/^[:graph:]*/# /g'
+		if [[ "$?" != "0" ]]
+		then
+			setRmpacks
+		fi
+	else
+		sed -i 's,removepacks:'"$prmline"';,removepacks:'"$rempacks"';,g' $NWDIR/install/backend.parm 
+	fi
+}
+
+function updRepos() {
+	setRepos
+	cp -f $NWDIR/install/sources.list $NWDIR/live/basefs/etc/apt/sources.list
+	chroot $NWDIR/live/basefs/ apt-get -y update 2>&1 | sed -u 's/^[:graph:]*/# /g' | \
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "Updating Repos" --programbox "Now Updating Software repos" 20 80
+	while [[ -n `ls $NWDIR/live/basefs/var/lib/apt/lists/partial/ | grep -vE "*.gpg"` ]] || [[ -z `ls $NWDIR/live/basefs/var/lib/apt/lists/*Packages` ]]
+	do
+		dialog --clear --no-shadow --backtitle "$TITLE" --title="Error" --yesno "$C21" 15 60 2> /dev/null
+		[[ $? == 0 ]] && updRepos
+		[[ $! == 10 ]] && 
+		dialog --clear --no-shadow --backtitle "$TITLE" --title "Error" --yesno "$C22" 15 60 2> /dev/null
+			[[ $? == 0 ]] && setRepos; updRepos
+			[[ $? == 10 ]] && return
+	done
+}
+
+function setInstpacks() {
+	if [[ -n $instpacks ]]
+	then
+		return
+	fi
+	baseEnv
+	updRepos
+	pinstline=`cat $NWDIR/install/backend.parm | grep -m1 "^installpacks:" | sed 's/installpacks://g' | tr -d ';' | tee > /tmp/dredistwizard/pinstline`
+	chroot $NWDIR/live/basefs/ apt-cache pkgnames | sort | tr "\n" " " > /tmp/dredistwizard/ipacks
+	dialog --clear --no-shadow --extra-button --extra-label "Do By Hand" --backtitle "$TITLE" --title "$R11" --checklist "$C10" 60 50 60 `cat /tmp/dredistwizard/ipacks | sed "s/ / - off /g"` 2> $TMP 
+	ctrlCncl
+	if [[ $? == 1 ]]
+	then 
+		dialog --clear --no-shadow --backtitle "$TITLE" --title "Enter Packages Names to install" --inputbox "Enter Packages Names to install\n seperate with spaces" 15 60 "Enter Packages seperated by spaces" 2> $TMP
+		[[ $? == 10 ]] && setInstpacks
+		instpacks=`getChoice`
+	else
+		instpacks=`getChoice`
+	fi
+	for i in `echo $instpacks`
+	do
+		(echo $pinstline | grep $i) && (cat $NWDIR/install/backend.parm | grep -m1 "installpacks" | sed -i "s/$i//g" | tr "  " " ")
+	done
+	if [[ -n $instpacks ]]
+	then
+		sed -i 's,installpacks:'"$pinstline"';,installpacks:'"$instpacks"';,g' $NWDIR/install/backend.parm
+		chroot $NWDIR/live/basefs/ apt-get -qy -s --force-yes install $instpacks 2>&1 | sed -u 's/^[:graph:]*/# /g' > /dev/null 2>&1
+		if [[ $? != "0" ]]
+		then
+			setInstpacks
+		else
+			debs=`chroot $NWDIR/live/basefs apt-get install -yq --print-uris $instpacks | grep -E "^'(http://|ftp://|https://)" | \
+			awk '{print $1,$4}' | tr -d "'" | sed 's/MD5Sum://g'`
+			debsno=`echo "$debs" | awk '{print $1}' | grep -cE "^(http://|ftp://|https://)"`
+			except=`echo "$debs" | awk -F " " '{print $2}' | tr "\n" " "`
+			pkgurls=`echo "$debs" | awk -F " " '{print $1}' | tr "\n" " "`
+			for i in `ls $NWDIR/install/packages/*.deb`
+			do
+				echo "$except" | grep -q "`basename $i`" || rm $i
+			done
+			n=1
+			cd "$NWDIR/install/packages"
+			for pkgurl in $pkgurls
+			do
+				(wget -t 5 -c $pkgurl 2>&1 | \
+				stdbuf -o0 awk '/[.] +[0-9][0-9]?[0-9]?%/ { print substr($0,63,3) }' | \
+				dialog --clear --no-shadow --backtitle "$TITLE" --title "$a12" --gauge "Need to get $debsno packages\n${n}-\nDownloading `basename $pkgurl`" 10 70) || exited="1"
+				n=$(($n+1))
+			done
+		fi
+	else
+		sed -i 's,installpacks:'"$pinstline"';,installpacks:'"$instpacks"';,g' $NWDIR/install/backend.parm
+	fi
+	[[ "$exited" == "1" ]] && exited=0 && return
+	cd $NWDIR/install/packages
+	apt-ftparchive packages . > Packages
+	bzip2 -kf Packages
+}
+
+function setRtpart () {
+	if [[ -n $newrtpart ]]
+	then
+		return
+	fi
+	rtpart=`cat $NWDIR/install/backend.parm | grep -m1 "^rootpart:" | sed 's/rootpart://g' | tr -d ';'`
+	[[ -z "$rtpart" ]] && rtpart="none"
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R12" --inputbox "$C11" 15 60 "none" 2> $TMP
+	ctrlCncl
+	newrtpart=`getChoice | cut -f1 -d ' ' | grep -Eo "(/dev/sd[a-z]+[0-9]+|none)"`
+	if [[ -z "$newrtpart" ]]
+	then
+		dialog --clear --no-shadow --backtitle "$TITLE" --title "$C12" --msgbox "$C12" 15 60
+		setRtpart
+	elif [[ "$newrtpart" == "none" ]]
+	then
+		newrtpart=""
+		sed -i 's,rootpart:'"$rtpart"';,rootpart:'"$newrtpart"';,g' $NWDIR/install/backend.parm
+	elif [[ "$newrtpart" == "$rtpart" ]]
+	then
+		return
+	else
+		sed -i 's,rootpart:'"$rtpart"';,rootpart:'"$newrtpart"';,g' $NWDIR/install/backend.parm
+	fi
+}
+
+function setSwap() {
+	if [[ -n $newswappart ]]
+	then
+		return
+	fi
+	swappart=`cat $NWDIR/install/backend.parm | grep -m1 "^swappart:" | sed 's/swappart://g' | tr -d ';'`
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R13" --inputbox "$C13" 15 60 "none" 2> $TMP
+	ctrlCncl
+	newswappart=`getChoice | cut -f1 -d ' ' | grep -Eo "(/dev/sd[a-z]+[0-9]+|none)"`
+	if [[ -z "$newswappart" ]]
+	then
+		dialog --clear --no-shadow --backtitle "$TITLE" --title "$C12" --msgbox "$C12" 15 60
+		setSwap
+	elif [[ "$newswappart" == "none" ]]
+	then
+		newswappart=""
+		sed -i 's,swappart:'"$swappart"';,swappart:'"$newswappart"';,g' $NWDIR/install/backend.parm
+	elif [[ "$newswappart" == "$swappart" ]]
+	then
+		return
+	else
+		sed -i 's,swappart:'"$swappart"';,swappart:'"$newswappart"';,g' $NWDIRinstall/backend.parm
+	fi
+}
+
+function getHfsf() {
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$C15" --inputbox "$C15" 15 60 "ext4" 2> $TMP
+	ctrlCncl
+	newhomefsf=`getChoice | cut -f1 -d ' '`
+	if [[ -z "$newhomefsf" ]]
+	then
+		gethfsf
+	fi
+}
+
+function setHome() {
+	if [[ -n $newhomepart ]]
+	then
+		return
+	fi
+	homepart=`cat $NWDIR/install/backend.parm | grep -m1 "^homepart:" | sed 's/homepart://g' | tr -d ';'`
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R14" --inputbox "$C14" 15 60 "$homepart" 2> $TMP
+	ctrlCncl
+	newhomepart=`getChoice | cut -f1 -d ' ' | grep -Eo "(/dev/sd[a-z]+[0-9]+|root)"`
+	if [[ -z "$newhomepart" ]]
+	then
+		dialog --clear --no-shadow --backtitle "$TITLE" --title "$C12" --msgbox "$C12" 15 60
+		setHome
+	else
+		sed -i 's,homepart:'"$homepart"';,homepart:'"$newhomepart"';,g' $NWDIR/install/backend.parm
+		homefsf=`cat install/backend.parm | grep -m1 "^homefsformat:" | sed 's/homefsformat://g' | tr -d ';' | grep -Eo "(ext4|ext3|ext2|noformat)"`
+		if [[ "$newhomepart" == "root" ]]
+		then
+			sed -i 's,homefsformat:'"$homefsf"';,homefsformat:noformat;,g' $NWDIR/install/backend.parm
+		else
+			gethfsf
+			sed -i 's,homefsformat:'"$homefsf"';,homefsformat:'"$newhomefsf"';,g' $NWDIR/install/backend.parm
+		fi
+	fi
+}
+
+function setUname() {
+	if [[ -n $newuname ]]
+	then
+		return
+	fi
+	uname=`cat $NWDIR/install/backend.parm | grep -m1 "^uname:" | sed 's/uname://g' | tr -d ';' | tr -d '\n'`
+	[[ -z "$uname" ]] && uname="none"
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R15" --inputbox "$C16" 15 60 "$uname" 2> $TMP
+	ctrlCncl
+	[[ "$uname" == "none" ]] && uname=""
+	newuname=`getChoice | tr -d "\n"`
+	if [[ -z "$newuname" ]] || [ -n "$(echo "$newuname" | tr -d 'A-Za-z0-9-_')" ]
+	then
+		setUname
+	elif [[ "$newuname" == "none" ]]
+	then
+		newuname=""
+		sed -i 's,uname:'"$uname"';,uname:'"$newuname"';,g' $NWDIR/install/backend.parm
+	else
+		sed -i 's,uname:'"$uname"';,uname:'"$newuname"';,g' $NWDIR/install/backend.parm
+	fi
+}
+
+function setFuname() {
+	if [[ -n $newfuname ]]
+	then
+		return
+	fi
+	funame=`cat $NWDIR/install/backend.parm | grep -m1 "^ufullname:" | sed 's/ufullname://g' | tr -d ';' | tr -d '\n'`
+	[[ -z "$funame" ]] && funame="none"
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R16" --inputbox "$C17" 15 60 "$funame" 2> $TMP
+	ctrlCncl
+	newfuname=`getChoice | tr -d "\n" | tr -d ","`
+	[[ "$funame" == "none" ]] && funame=""
+	if [[ -z "$newfuname" ]] || [ -n "$(echo "$newfuname" | tr -d 'A-Za-z0-9-_ ,.')" ]
+	then
+		setFuname
+	elif [[ "$newfuname" == "none" ]]
+	then
+		newfuname=""
+		sed -i 's,ufullname:'"$funame"';,ufullname:'"$newfuname"';,g' $NWDIR/install/backend.parm
+	else
+		sed -i 's,ufullname:'"$funame"';,ufullname:'"$newfuname"';,g' $NWDIR/install/backend.parm
+	fi
+}
+
+function setTZ() {
+	if [[ -n $newtz ]]
+	then
+		return
+	fi
+	tz=`cat $NWDIR/install/backend.parm | grep -m1 "^timezone:" | sed 's/timezone://g' | tr -d ';' | tr -d '\n'`
+	TZLIST=`cat /usr/share/zoneinfo/zone.tab | awk '{print $3}' | grep '/' | sort | tr "\n" " " | sed 's/ / "" off/g'`
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R17" --checklist "" "none" on "$C18" 20 50 15 "$TZLIST"
+	ctrlCncl
+	newtz=`getChoice`
+	if [[ -z "$newtz" ]]
+	then
+		setTZ
+	elif [[ "$newtz" == "none" ]]
+	then
+		newtz=""
+		sed -i 's,timezone:'"$tz"';,timezone:'"$newtz"';,g' $NWDIR/install/backend.parm
+	else
+		sed -i 's,timezone:'"$tz"';,timezone:'"$newtz"';,g' $NWDIR/install/backend.parm
+	fi
+}
+
+function setHstnm {
+	if [[ -n $newhstnm ]]
+	then
+		return
+	fi
+	hstnm=`cat $NWDIR/install/backend.parm | grep -m1 "^hostname:" | sed 's/hostname://g' | tr -d ';' | tr -d '\n'`
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R18" --inputbox "$C19" 15 60 "$hstnm" 2> $TMP
+	ctrlCncl
+	newhstnm=`getChoice | tr -d "\n"`
+	if [[ -z "$newhstnm" ]] || [ -n "$(echo "$newhstnm" | tr -d 'A-Za-z0-9-_')" ]
+	then
+		setHstnm
+	else
+		sed -i 's,hostname:'"$hstnm"';,hostname:'"$newhstnm"';,g' $NWDIR/install/backend.parm
+	fi
+}
+
+function setGrubloc() {
+	if [[ -n $newgrubloc ]]
+	then
+		return
+	fi
+	grubloc=`cat $NWDIR/install/backend.parm | grep -m1 "^grubloc:" | sed 's/grubloc://g' | tr -d ';' | tr -d '\n'`
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "$R19" --inputbox "$C20" 15 60 "$grubloc" 2> $TMP
+	ctrlCncl
+	newgrubloc=`getChoice`
+	if [[ -z "$newgrubloc" ]]
+	then
+		setGrubloc
+	elif [[ "$newgrubloc" != "MBR" ]] || [[ "$newgrubloc" != "root" ]]
+	then
+		setGrubloc
+	else
+		sed -i 's,grubloc:'"$grubloc"';,grubloc:'"$newgrubloc"';,g' $NWDIR/install/backend.parm
+	fi
+}
+
+function mkIso() {
+	setIsoname; setDistname; setGrublbl; setRmpacks; setInstpacks
+	if [[ -e "$WORKDIR/extracted/`echo $isoname | sed 's/.iso//g'`/$isoname" ]]
+	then
+		return
+	fi
+	umount $NWDIR/live/basefs/dev/pts > /dev/null 2>&1
+	umount $NWDIR/live/basefs/dev > /dev/null 2>&1
+	umount $NWDIR/live/basefs/proc > /dev/null 2>&1
+	umount $NWDIR/live/basefs/sys > /dev/null 2>&1
+	rm -rf $NWDIR/live/basefs
+	fssize=`du -s $NWDIR/ | awk '{print $1}'`
+	if [[ "$fssize" -gt "3999999" ]]
+	then
+		dialog --clear --no-shadow --backtitle "$TITLE" --title "$C23" --msgbox "$C23" 15 60
+		return
+	else
+		chmod a+w $NWDIR/isolinux/isolinux.bin
+		dirnm=`echo $isoname | sed 's/.iso//g'`
+		mkdir -p $WORKDIR/extracted/$dirnm
+		[[ -f "$WORKDIR/extracted/$dirnm/$isoname" ]] && rm -f $WORKDIR/extracted/$dirnm/$isoname
+		[[ -f "$WORKDIR/extracted/$dirnm/$isoname.md5" ]] && rm -f $WORKDIR/extracted/$dirnm/$isoname.md5
+		genisoimage -quiet -r -V $isoname -cache-inodes -J -l -b $NWDIR/isolinux/isolinux.bin -c $NWDIR/isolinux/boot.cat -no-emul-boot -boot-load-size 4 \
+		-boot-info-table -o $WORKDIR/extracted/$dirnm/$isoname "$WORKDIR/extracted/newiso"
+		$APPDIR/data/bin/isohybrid $WORKDIR/extracted/$dirnm/$isoname
+		md5sum $WORKDIR/extracted/$dirnm/$isoname > $WORKDIR/extracted/$dirnm/$isoname.md5
+		inpacks=`cat $NWDIR/install/backend.parm | grep -m1 "^installpacks:" | sed 's/installpacks://g' | tr -d ';'`
+		echo -ne "DISTRIBUTION:\n" > $WORKDIR/extracted/$dirnm/README
+		echo -ne "\t$newdistname\n\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "VERSION:\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "\t\n\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "ABOUT:\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "\t\n\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "AUTHORS:\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "\t\n\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "LICENSE:\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "\tLicense GPLv3+: GNU GPL version 3+ <http://gnu.org/licenses/gpl.html>\n\n\tThis is free software, You are free to change and redistribute it.\
+		\n\tThere is NO WARRANTY, to the extent permitted by law.\n\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "BUGS:\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "\t\n\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "DATE:\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "\t`date`\n\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "CHANGELOG:\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "\t\n\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "INCLUDED SOFTWARE:\n" >> $WORKDIR/extracted/$dirnm/README
+		echo -ne "`IFS=$(echo -en \" \"); for i in $inpacks; do echo -e \"\t- $i\"; done`\n" >> $WORKDIR/extracted/$dirnm/README
+		dialog --clear --no-shadow --backtitle "$TITLE" --title "$C24" --editbox $WORKDIR/extracted/$dirnm/README 20 60 2> /tmp/dredistwizard/README
+		cat /tmp/dredistwizard/README > $WORKDIR/extracted/$dirnm/README 
+		cd $WORKDIR/extracted
+		fno=`find $dirnm -type f | wc -l`
+		7z -mx=9 a $dirnm.7z $dirnm 2>&1 | fgrep Compressing | nl | mawk -W interactive -v x="$fno" '{printf "%d\n", (NR*100/x)}' | \
+		dialog --clear --no-shadow --backtitle "$TITLE" --title "$a15" --programbox "$C25" 10 60
+		dialog --clear --no-shadow --backtitle "$TITLE" --title "$a14" --msgbox "$C26$WORKDIR/extracted/" 10 60
+		cd $WORKDIR
+		rm -rf /tmp/dredistwizard/*
+		mainMenu
+	fi
+}
+
+function showAbout() {
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "About This program" --textbox $APPDIR/data/about 30 80
+}
+function redistMenu() {
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "Redistribution Menu" --checklist "$R" 28 70 25 \
+	"SIN" "$R1" on "SLGT" "$R2" on "SLGL" "$R3" on "SGR" "$R4" on "SETC" "$R5" on "SSKEL" "$R6" on "SEXT" "$R7" on "SSR" "$R8" on "SAK" "$R9" on "SRP" "$R10" on \
+	"SIP" "$R11" on "SPP" "$R12" on "SSP" "$R13" on "SHP" "$R14" on "SUN" "$R15" on "SFUN" "$R16" on "STZ" "$R17" on "SHN" "$R18" on "SGL" "$R19" on "BI" "$R20" on 2> $TMP
+	[[ $? == 10 ]] && mainMenu
+	choice=`getChoice`
+	echo "$choice" | grep -q "SIN" && setIsoname
+	echo "$choice" | grep -q "SLGT" && setDistname
+	echo "$choice" | grep -q "SLGL" && setGrublbl
+	echo "$choice" | grep -q "SGR" && setGrubimg
+	echo "$choice" | grep -q "SETC" && setEtc
+	echo "$choice" | grep -q "SSKEL" && setSkel
+	echo "$choice" | grep -q "SEXT" && setExtra
+	echo "$choice" | grep -q "SSR" && setRepos
+	echo "$choice" | grep -q "SAK" && setKeys
+	echo "$choice" | grep -q "SRP" && setRmpacks
+	echo "$choice" | grep -q "SIP" && setInstpacks
+	echo "$choice" | grep -q "SPP" && setRtpart
+	echo "$choice" | grep -q "SSP" && setSwap
+	echo "$choice" | grep -q "SHP" && setHome
+	echo "$choice" | grep -q "SUN" && setUname
+	echo "$choice" | grep -q "SFUN" && setFuname
+	echo "$choice" | grep -q "STZ" && setTZ
+	echo "$choice" | grep -q "SHN" && setHstnm
+	echo "$choice" | grep -q "SGL" && setGrubloc
+	echo "$choice" | grep -q "BI" && mkIso
+}
+function mainMenu() {
+	dialog --clear --no-shadow --no-cancel --backtitle "$TITLE" --title "Main Menu" --menu "$a0" 15 65 12 \
+	"W" "$a1" "G" "$a2" "R" "$a3" "C" "$a4" "A" "$a9" "E" "$A10" 2> $TMP
+	choice=`getChoice`
+	case $choice in
+		"W")
+			setWorkdir; mainMenu
+			;;
+		"G")
+			getBase; mainMenu
+			;;
+		"R")
+			strRedist; mainMenu
+			;;
+		"C")
+			clrWorkdir; mainMenu
+			;;
+		"A")
+			showAbout; mainMenu
+			;;
+		"E")
+			exit 0
+			;;
+	esac
+}
+
+function chDeps() {
+	for i in `cat $APPDIR/data/deps | awk -F ':' '{ print $1 }'`
+	do
+		if [[ -z `which $i` ]]; then
+		dialog --clear --no-shadow --backtitle "$TITLE" --title "Fatal" --msgbox \
+		"Can't find command ( $i ), You can solve that by installing package (`cat deps | grep \"^$i\" | awk -F ':' '{ print $2 }'`)" 40 80
+		exit 1
+		fi
+		testCon
+	done 
+}
+
+function testCon() {
+	mkdir -p /tmp/dredistwizard/
+	rm -f /tmp/dredistwizard/*
+	wget -t 2 -c http://www.sphinux.org/basefs/basefs.list -O /tmp/dredistwizard/basefs.list 2>&1 | \
+	stdbuf -o0 awk '/[.] +[0-9][0-9]?%/ { print substr($0,63,3) }' | \
+	dialog --clear --no-shadow --backtitle "$TITLE" --title "Checking Connection" --guage "\nTesting Connection and getting basefs.list file" 10 80 50
+	baseno=`cat /tmp/dredistwizard/basefs.list | awk -F ';' '{print $5}' | grep -c '^1' | tr -d '%'`
+	if [[ "$baseno" -lt "1" ]]
+	then
+		dialog --clear --no-shadow --backtitle "$TITLE" --title "Fatal Error" --msgbox "$a13" 8 60
+		exit 1
+	else
+		wget -t 5 -c http://www.sphinux.org/basefs/basefs.list -O /tmp/dredistwizard/basefs.list 2>&1 | \
+		stdbuf -o0 awk '/[.] +[0-9][0-9]?%/ { print substr($0,63,3) }' | \
+		dialog --clear --no-shadow --backtitle "$TITLE" --title "Done.." --guage "\nDone\nFound $baseno Base filesystems .\n\n" 10 80 100
+		mainMenu
+	fi
+}
+chScr

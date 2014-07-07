@@ -1,0 +1,16 @@
+Source: redistwizard
+Section: admin
+Priority: extra
+Maintainer: Ibrahim E.Gad <eibrahim95@gmail.com>
+Build-Depends: p7zip-full, gawk, apt-utils, bc, bzip2, grep, genisoimage, mawk, realpath, sed, mount, squashfs-tools, wget, wmctrl, less, dialog, coreutils, nano
+Standards-Version: 0.4
+Homepage: https://github.com/LonelyLeopard/bash/tree/master/redistwizard-cli-0.2
+Package: redistwizard-cli
+Architecture: all
+Version: 0.4
+Depends: p7zip-full, gawk, apt-utils, bc, bzip2, grep, genisoimage, mawk, realpath, sed, mount, squashfs-tools, wget, wmctrl, less, dialog, coreutils, nano
+Description:	     
+ 		   Redistwizard-CLI - A Clone of Redistwizard but uses CLI
+                 **Redistwizard-CLI - Will help you redistribute StdBaseFS.** 
+             StdBaseFS is an extended standard Linux base redistribution framework.
+         Easy to use, standardized and gives you control over the redistribution process.

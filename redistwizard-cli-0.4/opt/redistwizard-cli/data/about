@@ -1,0 +1,19 @@
+
+	
+###############################################################################################
+		   Redistwizard-CLI - A Clone of Redistwizard but uses CLI
+                 **Redistwizard-CLI - Will help you redistribute StdBaseFS.**
+	      StdBaseFS is an extended standard Linux base redistribution framework.
+	Easy to use, standardized and gives you control over the redistribution process.
+################################################################################################
+
+Author:
+	Original: Sibirskiy Volk <yuri@sphinux.org>
+        Editor: Ibrahim E.Gad <eibrahim95@gmail.com>
+
+License:
+	Copyright © 2014 SphinUX Community, Alexandria, Egypt.
+
+	License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.
+	This is free software: you are free to change and redistribute it.
+	There is NO WARRANTY, to the extent permitted by law.

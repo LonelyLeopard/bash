@@ -1,0 +1,55 @@
+#! /bin/bash
+
+function testRoot() {
+	testroot=`whoami`
+	if [ $testroot != root ]
+	then
+        printf "Fatal Error : Must be root or run with sudo\n"
+        exit 2
+	fi
+}
+
+function printHelp() {
+	echo -e "\n\t\t\tRedistwizard-cli-0.2_July 2014 _( help instructions )"
+	echo -e "\tRedistwizard-cli is a clone of Redistwizard but uses CLI _Command Line Interface_"
+	echo -e "\tNew in this version that you can use the dialog version of Redistwizard by passing the '-d' or '--dialog' argument"
+	echo -e "\tRedistwizard will help you redistribute StdBasefs _( Standard Base File System ) of SphinUX OS"
+	echo -e "\tStdBaseFS is an extended standard Linux base redistribution framework."
+	echo -e "\tRedistwizard is easy to use and gives you control over the redistribution process"
+	echo -e "Usage:\n\tredistwizard-cli [option] "
+	echo -e "Options :\n\t-d --dilalog\n\t\tStart the dialog version of Redistwizard"
+	echo -e "\t-h --help\n\t\tShow help message _This message_"
+	echo 
+	echo -e "Author:\n\tOrignal: Sibirskiy Volk <yuri@sphinux.org>\n\tEditor: Ibrahim E.Gad <eibrahim95@gmail.com>"
+	echo 
+	echo -e "License: \n\tCopyright © 2014 SphinUX Community, Alexandria, Egypt."
+	echo -e "\tLicense GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>."
+	echo -e "\tThis is free software: you are free to change and redistribute it.\n\tThere is NO WARRANTY, to the extent permitted by law."
+	echo 
+	echo -e "\n\t\t<Wrote be Ibrahim E.Gad on July 2014>\n\n"
+}
+
+function printUsage() {
+	echo -e "Usage:\n\tredistwizard-cli [option] "
+	echo -e "Options :\n\t-d --dilalog\n\t\tStart the dialog version of Redistwizard"
+	echo -e "\t-h --help\n\t\tShow help message"
+	echo
+}
+
+case $1 in
+	"-h" | "--help")
+		printHelp
+		;;
+	"-d" | "--dialog")
+		testRoot
+		/opt/redistwizard-cli/dbasefs-editor
+		;;
+	"")
+		testRoot
+		/opt/redistwizard-cli/basefs-editor
+		;;
+	*)
+		printUsage
+		;;
+esac
+
